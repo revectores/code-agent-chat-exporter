@@ -8,6 +8,7 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
 OUTPUT_DIR = Path("./exported_chats")
 
@@ -25,6 +26,17 @@ def safe_filename(s: str, max_len: int = 60) -> str:
     s = re.sub(r"[^\w\s-]", "", s).strip()
     s = re.sub(r"[\s]+", "_", s)
     return s[:max_len] or "untitled"
+
+
+def path_to_subdir(abs_path: str) -> Path:
+    """Convert an absolute workspace path to a relative subdir, stripping $HOME."""
+    if not abs_path:
+        return Path("unknown")
+    p = Path(abs_path)
+    try:
+        return p.relative_to(Path.home())
+    except ValueError:
+        return p.relative_to(p.anchor) if p.anchor else p
 
 
 def write_md(path: Path, content: str):
@@ -69,11 +81,11 @@ def export_claude(out_dir: Path):
     for project_dir in sorted(projects_dir.iterdir()):
         if not project_dir.is_dir():
             continue
-        project_name = project_dir.name.lstrip("-").replace("-", "/")
 
         for jsonl_path in sorted(project_dir.glob("*.jsonl")):
             session_id = jsonl_path.stem
             messages = []
+            cwd = ""
 
             with open(jsonl_path, encoding="utf-8") as f:
                 for line in f:
@@ -84,6 +96,8 @@ def export_claude(out_dir: Path):
                         obj = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    if not cwd and obj.get("cwd"):
+                        cwd = obj["cwd"]
                     if obj.get("type") not in ("user", "assistant"):
                         continue
                     role = obj["type"]
@@ -102,12 +116,13 @@ def export_claude(out_dir: Path):
             first_user = next((m[1] for m in messages if m[0] == "user"), session_id)
             title = safe_filename(first_user[:50])
             date_str = first_dt.strftime("%Y-%m-%d") if first_dt else "unknown"
+            project_subdir = path_to_subdir(cwd)
 
             lines = [
                 f"# {first_user[:100]}",
                 "",
                 f"**Source:** Claude Code  ",
-                f"**Project:** `{project_name}`  ",
+                f"**Project:** `{cwd}`  ",
                 f"**Session:** `{session_id}`  ",
                 f"**Date:** {date_str}",
                 "",
@@ -122,7 +137,7 @@ def export_claude(out_dir: Path):
                 lines.append(text)
                 lines.append("")
 
-            filename = dest / date_str / f"{title}__{session_id[:8]}.md"
+            filename = dest / project_subdir / f"{title}__{session_id[:8]}.md"
             write_md(filename, "\n".join(lines))
             total += 1
 
@@ -231,6 +246,7 @@ def export_codex(out_dir: Path):
         first_user = next((m[1] for m in messages if m[0] == "user"), session_id)
         title = safe_filename(first_user[:50])
         date_str = first_dt.strftime("%Y-%m-%d") if first_dt else "unknown"
+        project_subdir = path_to_subdir(cwd)
 
         lines = [
             f"# {first_user[:100]}",
@@ -251,7 +267,7 @@ def export_codex(out_dir: Path):
             lines.append(text)
             lines.append("")
 
-        filename = dest / date_str / f"{title}__{session_id[:8]}.md"
+        filename = dest / project_subdir / f"{title}__{session_id[:8]}.md"
         write_md(filename, "\n".join(lines))
         total += 1
 
@@ -284,18 +300,18 @@ def assemble_copilot_response(response_items: list) -> str:
     return result
 
 
-def get_workspace_folder(db_path: Path) -> str:
-    """Read workspace.json next to state.vscdb to get the folder name."""
+def get_workspace_path(db_path: Path) -> str:
+    """Read workspace.json next to state.vscdb to get the full workspace path."""
     ws_json = db_path.parent / "workspace.json"
     if ws_json.exists():
         try:
             data = json.loads(ws_json.read_text())
             folder = data.get("folder", "")
             if folder:
-                return Path(folder.replace("file://", "")).name
+                return unquote(folder.replace("file://", ""))
         except Exception:
             pass
-    return db_path.parent.name[:16]
+    return ""
 
 
 def export_copilot(out_dir: Path):
@@ -311,7 +327,7 @@ def export_copilot(out_dir: Path):
         if not chat_sessions_dir.is_dir():
             continue
         db_path = chat_sessions_dir.parent / "state.vscdb"
-        workspace_name = get_workspace_folder(db_path)
+        workspace_path = get_workspace_path(db_path)
 
         for session_json in sorted(chat_sessions_dir.glob("*.json")):
             try:
@@ -344,12 +360,13 @@ def export_copilot(out_dir: Path):
             first_user = next((m[1] for m in messages if m[0] == "user"), session_id)
             title = safe_filename(first_user[:50])
             date_str = first_dt.strftime("%Y-%m-%d") if first_dt else "unknown"
+            project_subdir = path_to_subdir(workspace_path)
 
             lines = [
                 f"# {first_user[:100]}",
                 "",
                 f"**Source:** GitHub Copilot Chat  ",
-                f"**Workspace:** `{workspace_name}`  ",
+                f"**Workspace:** `{workspace_path}`  ",
                 f"**Session:** `{session_id}`  ",
                 f"**Date:** {date_str}",
                 "",
@@ -364,7 +381,7 @@ def export_copilot(out_dir: Path):
                 lines.append(text)
                 lines.append("")
 
-            filename = dest / date_str / f"{title}__{session_id[:8]}.md"
+            filename = dest / project_subdir / f"{title}__{session_id[:8]}.md"
             write_md(filename, "\n".join(lines))
             total += 1
 
