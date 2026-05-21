@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
 
-OUTPUT_DIR = Path("/Users/rex/Library/Mobile Documents/com~apple~CloudDocs/exported_chats")
+OUTPUT_DIR = Path("./exported_chats")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
