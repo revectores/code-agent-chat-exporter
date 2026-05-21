@@ -5,12 +5,11 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote
 
-OUTPUT_DIR = Path("./exported_chats")
+OUTPUT_DIR = Path("/Users/rex/Library/Mobile Documents/com~apple~CloudDocs/exported_chats")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -28,15 +27,11 @@ def safe_filename(s: str, max_len: int = 60) -> str:
     return s[:max_len] or "untitled"
 
 
-def path_to_subdir(abs_path: str) -> Path:
-    """Convert an absolute workspace path to a relative subdir, stripping $HOME."""
+def path_to_folder(abs_path: str) -> str:
+    """Return just the final folder name of a workspace path."""
     if not abs_path:
-        return Path("unknown")
-    p = Path(abs_path)
-    try:
-        return p.relative_to(Path.home())
-    except ValueError:
-        return p.relative_to(p.anchor) if p.anchor else p
+        return "unknown"
+    return Path(abs_path).name or "unknown"
 
 
 def write_md(path: Path, content: str):
@@ -75,7 +70,6 @@ def export_claude(out_dir: Path):
         print("Claude Code projects directory not found, skipping.")
         return
 
-    dest = out_dir / "claude"
     total = 0
 
     for project_dir in sorted(projects_dir.iterdir()):
@@ -116,7 +110,8 @@ def export_claude(out_dir: Path):
             first_user = next((m[1] for m in messages if m[0] == "user"), session_id)
             title = safe_filename(first_user[:50])
             date_str = first_dt.strftime("%Y-%m-%d") if first_dt else "unknown"
-            project_subdir = path_to_subdir(cwd)
+            dt_prefix = first_dt.strftime("%Y%m%d_%H%M%S") if first_dt else "unknown"
+            folder = path_to_folder(cwd)
 
             lines = [
                 f"# {first_user[:100]}",
@@ -137,7 +132,7 @@ def export_claude(out_dir: Path):
                 lines.append(text)
                 lines.append("")
 
-            filename = dest / project_subdir / f"{title}__{session_id[:8]}.md"
+            filename = out_dir / folder / f"{dt_prefix}__{title}__{session_id[:8]}.md"
             write_md(filename, "\n".join(lines))
             total += 1
 
@@ -173,7 +168,6 @@ def export_codex(out_dir: Path):
         print("Codex sessions directory not found, skipping.")
         return
 
-    dest = out_dir / "codex"
     total = 0
 
     for jsonl_path in sorted(sessions_dir.rglob("rollout-*.jsonl")):
@@ -246,7 +240,8 @@ def export_codex(out_dir: Path):
         first_user = next((m[1] for m in messages if m[0] == "user"), session_id)
         title = safe_filename(first_user[:50])
         date_str = first_dt.strftime("%Y-%m-%d") if first_dt else "unknown"
-        project_subdir = path_to_subdir(cwd)
+        dt_prefix = first_dt.strftime("%Y%m%d_%H%M%S") if first_dt else "unknown"
+        folder = path_to_folder(cwd)
 
         lines = [
             f"# {first_user[:100]}",
@@ -267,7 +262,7 @@ def export_codex(out_dir: Path):
             lines.append(text)
             lines.append("")
 
-        filename = dest / project_subdir / f"{title}__{session_id[:8]}.md"
+        filename = out_dir / folder / f"{dt_prefix}__{title}__{session_id[:8]}.md"
         write_md(filename, "\n".join(lines))
         total += 1
 
@@ -320,7 +315,6 @@ def export_copilot(out_dir: Path):
         print("VS Code workspaceStorage not found, skipping.")
         return
 
-    dest = out_dir / "copilot"
     total = 0
 
     for chat_sessions_dir in sorted(ws_storage.glob("*/chatSessions")):
@@ -360,7 +354,8 @@ def export_copilot(out_dir: Path):
             first_user = next((m[1] for m in messages if m[0] == "user"), session_id)
             title = safe_filename(first_user[:50])
             date_str = first_dt.strftime("%Y-%m-%d") if first_dt else "unknown"
-            project_subdir = path_to_subdir(workspace_path)
+            dt_prefix = first_dt.strftime("%Y%m%d_%H%M%S") if first_dt else "unknown"
+            folder = path_to_folder(workspace_path)
 
             lines = [
                 f"# {first_user[:100]}",
@@ -381,7 +376,7 @@ def export_copilot(out_dir: Path):
                 lines.append(text)
                 lines.append("")
 
-            filename = dest / project_subdir / f"{title}__{session_id[:8]}.md"
+            filename = out_dir / folder / f"{dt_prefix}__{title}__{session_id[:8]}.md"
             write_md(filename, "\n".join(lines))
             total += 1
 
